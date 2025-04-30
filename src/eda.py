@@ -35,6 +35,48 @@ def salary_plot():
   # Saving The Plot
   plt.savefig('../results/eda_plots/salary_distribution.png')
 
+# Function To Create A Bar Chart Displaying AI Adoption Frequencies
+def ai_adoption_plot():
+  # Extracting The AI Adoption Column From Data
+  ai_adoption = data['AI_Adoption_Level']
+
+  # Creating A BarChart Displaying AI Adoption Frequencies
+  plt.figure(figsize=(10, 6))
+  sns.countplot(x=ai_adoption, palette='viridis')
+  plt.title('AI Adoption Frequencies')
+  plt.xlabel('AI Adoption')
+  plt.ylabel('Frequency')
+
+  # Saving The Plot
+  plt.savefig('../results/eda_plots/ai_adoption_frequencies.png')
+
+# Function To Create A Cross Tabulation Displaying AI Adoption Frequencies By Growth
+def ai_adoption_by_growth():
+  # Creating A Cross Tabulation Displaying AI Adoption Frequencies By Growth
+  crosstab = pd.crosstab(data['AI_Adoption_Level'], data['Job_Growth_Projection'])
+  plt.figure(figsize=(10, 6))
+  sns.heatmap(crosstab, annot=True, cmap='viridis')
+  plt.title('AI Adoption Frequencies By Growth')
+  plt.xlabel('Growth Projection')
+  plt.ylabel('AI Adoption Level')
+
+  # Saving The Plot
+  plt.savefig('../results/eda_plots/ai_adoption_by_growth.png')
+
+# Function To Create A Plot Displaying Salary Distribution By AI Adoption
+def salary_by_ai_adoption():
+  # Creating A Box Plot Displaying Salary Distribution By AI Adoption
+  plt.figure(figsize=(10, 6))
+  sns.boxplot(x=data['AI_Adoption_Level'], y=data['Salary_USD'], palette='viridis')
+  plt.title('Salary Distribution By AI Adoption')
+  plt.xlabel('AI Adoption Level')
+  plt.ylabel('Salary')
+
+  # Saving The Plot
+  plt.savefig('../results/eda_plots/salary_by_ai_adoption.png')
 
 growth_plot()
 salary_plot()
+ai_adoption_plot()
+ai_adoption_by_growth()
+salary_by_ai_adoption()
