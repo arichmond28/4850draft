@@ -75,8 +75,34 @@ def salary_by_ai_adoption():
   # Saving The Plot
   plt.savefig('../results/eda_plots/salary_by_ai_adoption.png')
 
+# Function To Create A Plot Displaying AI Adoption By Automation Risk
+def automating_risk_by_ai_adoption():
+  # Creating A Count Plot Displaying Automating Risk By AI Adoption
+  plt.figure(figsize=(10, 6))
+  sns.countplot(x=data['AI_Adoption_Level'], hue=data['Automation_Risk'], palette='viridis')
+  plt.title('Automating Risk By AI Adoption')
+  plt.xlabel('AI Adoption Level')
+  plt.ylabel('Automating Risk')
+
+  # Saving The Plot
+  plt.savefig('../results/eda_plots/automating_risk_by_ai_adoption.png')
+
+# Function To Create A Plot Displaying Growth Projection By Remote Work
+def growth_by_remote_work():
+  # Creating A Count Plot Displaying Growth Projection By Remote Work
+  plt.figure(figsize=(10, 6))
+  sns.countplot(x=data['Remote_Friendly'], hue=data['Job_Growth_Projection'], palette='viridis')
+  plt.title('Growth Projection By Remote Work')
+  plt.xlabel('Remote Friendly')
+  plt.ylabel('Growth Projection')
+
+  # Saving The Plot
+  plt.savefig('../results/eda_plots/growth_by_remote_work.png')
+
 growth_plot()
 salary_plot()
 ai_adoption_plot()
 ai_adoption_by_growth()
 salary_by_ai_adoption()
+automating_risk_by_ai_adoption()
+growth_by_remote_work()
