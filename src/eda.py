@@ -99,6 +99,50 @@ def growth_by_remote_work():
   # Saving The Plot
   plt.savefig('../results/eda_plots/growth_by_remote_work.png')
 
+# Function To Create A Plot Displaying Most Common Skills At High Automation Risk
+def most_common_skills():
+  # Filtering The Data For High Automation Risk
+  high_automation_risk = data[data['Automation_Risk'] == 'High']
+
+  # Extracting The Skills Column From Data
+  skills = high_automation_risk['Required_Skills']
+
+  # Splitting The Skills Column Into Individual Skills
+  skills_split = skills.str.split(',', expand=True).stack().reset_index(drop=True)
+
+  # Creating A Count Plot Displaying The Most Common Skills At High Automation Risk
+  plt.figure(figsize=(10, 6))
+  sns.countplot(y=skills_split, palette='viridis')
+  plt.title('Most Common Skills At High Automation Risk')
+  plt.xlabel('Frequency')
+  plt.ylabel('Skills')
+
+  # Saving The Plot
+  plt.tight_layout()
+  plt.savefig('../results/eda_plots/most_common_skills_highauto.png')
+
+# Function To Generate A Plot Displaying Most Common Skills At Low Automation Risk
+def most_common_skills_low():
+  # Filtering The Data For Low Automation Risk
+  low_automation_risk = data[data['Automation_Risk'] == 'Low']
+
+  # Extracting The Skills Column From Data
+  skills = low_automation_risk['Required_Skills']
+
+  # Splitting The Skills Column Into Individual Skills
+  skills_split = skills.str.split(',', expand=True).stack().reset_index(drop=True)
+
+  # Creating A Count Plot Displaying The Most Common Skills At Low Automation Risk
+  plt.figure(figsize=(10, 6))
+  sns.countplot(y=skills_split, palette='viridis')
+  plt.title('Most Common Skills At Low Automation Risk')
+  plt.xlabel('Frequency')
+  plt.ylabel('Skills')
+
+  # Saving The Plot
+  plt.tight_layout()
+  plt.savefig('../results/eda_plots/most_common_skills_lowauto.png')
+
 growth_plot()
 salary_plot()
 ai_adoption_plot()
@@ -106,3 +150,5 @@ ai_adoption_by_growth()
 salary_by_ai_adoption()
 automating_risk_by_ai_adoption()
 growth_by_remote_work()
+most_common_skills()
+most_common_skills_low()
