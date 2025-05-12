@@ -1,94 +1,104 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from sentence_transformers import SentenceTransformer
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import ConfusionMatrixDisplay
 
-# Load the dataset
+# Load Data
 data = pd.read_csv('../data/ai_insights.csv')
 
-# Preprocess the data
-# Preprocessing Data
-def preprocess_data(data):
-    # Dropping Unnecessary Columns
-    data = data.drop(columns=['Job_Title', 'Industry', 'Location', 'Required_Skills'])
+# Load the pre-trained model
+text_model = SentenceTransformer('all-MiniLM-L6-v2')
 
-    # Encoding Company Size (Small, Medium Large) as 0, 1, 2
-    data['Company_Size'] = data['Company_Size'].map({'Small': 0, 'Medium': 1, 'Large': 2})
+# Preprocess the Data
+def preprocess_data_for_trees(df, n_components=60):
+    label_map = {'Growth': 0, 'Stable': 0, 'Decline': 1}
+    df['Job_Growth_Projection'] = df['Job_Growth_Projection'].map(label_map)
+    df['Remote_Friendly'] = df['Remote_Friendly'].map({'Yes': 0, 'No': 1})
+    level_map = {'Low': 0, 'Medium': 1, 'High': 2}
+    df['AI_Adoption_Level'] = df['AI_Adoption_Level'].map(level_map)
+    df['Automation_Risk'] = df['Automation_Risk'].map(level_map)
+    size_map = {'Small': 0, 'Medium': 1, 'Large': 2}
+    df['Company_Size'] = df['Company_Size'].map(size_map)
+    df = df.drop(columns=['Location'])
 
-    # Encoding AI Adoption Level (Low, Medium, High) as 0, 1, 2
-    data['AI_Adoption_Level'] = data['AI_Adoption_Level'].map({'Low': 0, 'Medium': 1, 'High': 2})
+    combined_texts = df['Job_Title'] + " " + df['Industry'] + " " + df['Required_Skills']
+    embeddings = text_model.encode(combined_texts.tolist())
 
-    # Encoding Job Growth Projection (Decline, Steady, Growth) as 0, 1, 2
-    data['Job_Growth_Projection'] = data['Job_Growth_Projection'].str.strip().str.title()
-    data['Job_Growth_Projection'] = data['Job_Growth_Projection'].map({'Decline': 0, 'Stable': 1, 'Growth': 2})
+    pca = PCA(n_components=n_components, random_state=42)
+    embeddings_reduced = pca.fit_transform(embeddings)
 
-    # Encoding Automation Risk (Low, Medium, High) as 0, 1, 2
-    data['Automation_Risk'] = data['Automation_Risk'].map({'Low': 0, 'Medium': 1, 'High': 2})
+    structured_features = df.drop(columns=['Job_Title', 'Industry', 'Required_Skills', 'Job_Growth_Projection']).values
 
-    # Encoding Remote Friendly (No, Yes) as 0, 1
-    data['Remote_Friendly'] = data['Remote_Friendly'].map({'No': 0, 'Yes': 1})
-
-    # Splitting Data Into Features And Target Variable
-    X = data.drop(columns=['Job_Growth_Projection'])
-    y = data['Job_Growth_Projection']
+    X = np.hstack([structured_features, embeddings_reduced])
+    y = df['Job_Growth_Projection'].values
 
     return X, y
 
-# Preprocessing Data
-X, y = preprocess_data(data)
+# Preprocess the data
+X, y = preprocess_data_for_trees(data)
 
-# Splitting Data Into Training And Testing Sets
+# Split the data into training and testing sets
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Creating Decision Tree Classifier Model
-model = DecisionTreeClassifier(random_state=42)
-
-# Fitting The Model To The Training Data
+# Create and train the model
+model = DecisionTreeClassifier(random_state=42, class_weight='balanced', max_depth=15, min_samples_split=2)
 model.fit(X_train, y_train)
 
-# Making Predictions On The Testing Data
+# Make predictions
 y_pred = model.predict(X_test)
 
-# Evaluating The Model
+# Evaluate the model
 accuracy = accuracy_score(y_test, y_pred)
 print(f'Accuracy: {accuracy:.2f}')
 print('Classification Report:')
 print(classification_report(y_test, y_pred))
+print('Confusion Matrix:')
+print(confusion_matrix(y_test, y_pred))
 
-# Creating Random Forest Classifier Model
-rf_model = RandomForestClassifier(random_state=42)
-
-# Fitting The Random Forest Model To The Training Data
+# Random Forest Classifier
+from sklearn.ensemble import RandomForestClassifier
+# Create and train the model
+rf_model = RandomForestClassifier(random_state=42, class_weight='balanced', n_estimators=50, max_depth=10, min_samples_split=2, min_samples_leaf=2)
 rf_model.fit(X_train, y_train)
-
-# Making Predictions On The Testing Data
-rf_y_pred = rf_model.predict(X_test)
-
-# Evaluating The Random Forest Model
-rf_accuracy = accuracy_score(y_test, rf_y_pred)
-print(f'Random Forest Accuracy: {rf_accuracy:.2f}')
+# Make predictions
+y_pred_rf = rf_model.predict(X_test)
+# Evaluate the model
+accuracy_rf = accuracy_score(y_test, y_pred_rf)
+print(f'Random Forest Accuracy: {accuracy_rf:.2f}')
 print('Random Forest Classification Report:')
-print(classification_report(y_test, rf_y_pred))
+print(classification_report(y_test, y_pred_rf))
+print('Random Forest Confusion Matrix:')
+print(confusion_matrix(y_test, y_pred_rf))
 
-# Creating Gradient Boosting Classifier Model
-gb_model = GradientBoostingClassifier(random_state=42)
+# XGBoost Classifier
+from xgboost import XGBClassifier
+# Create and train the model
+xgb_model = XGBClassifier(random_state=42, scale_pos_weight=1, max_depth=10, min_child_weight=2)
+xgb_model.fit(X_train, y_train)
+# Make predictions
+y_pred_xgb = xgb_model.predict(X_test)
+# Evaluate the model
+accuracy_xgb = accuracy_score(y_test, y_pred_xgb)
+print(f'XGBoost Accuracy: {accuracy_xgb:.2f}')
+print('XGBoost Classification Report:')
+print(classification_report(y_test, y_pred_xgb))
+print('XGBoost Confusion Matrix:')
+print(confusion_matrix(y_test, y_pred_xgb))
 
-# Fitting The Gradient Boosting Model To The Training Data
-gb_model.fit(X_train, y_train)
+# Save Confusion Matrix
+cm = confusion_matrix(y_test, y_pred_xgb)
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=model.classes_)
+disp.plot(cmap=plt.cm.Reds)
+plt.title('XGBoost Confusion Matrix')
+plt.savefig('../results/model_results/decision_trees/confusion_matrix.png')
 
-# Making Predictions On The Testing Data
-gb_y_pred = gb_model.predict(X_test)
-
-# Evaluating The Gradient Boosting Model
-gb_accuracy = accuracy_score(y_test, gb_y_pred)
-print(f'Gradient Boosting Accuracy: {gb_accuracy:.2f}')
-print('Gradient Boosting Classification Report:')
-print(classification_report(y_test, gb_y_pred))
-
-# Saving GB Classification Report to Text File
-with open('../results/gb_classification_report.txt', 'w') as f:
-    f.write('Gradient Boosting Classification Report:\n')
-    f.write(classification_report(y_test, gb_y_pred))
+# Save Classification Report As CSV
+report = classification_report(y_test, y_pred_xgb, output_dict=True)
+report_df = pd.DataFrame(report).transpose()
+report_df.to_csv('../results/model_results/decision_trees/classification_report.csv', index=True)

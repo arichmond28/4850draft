@@ -1,153 +1,138 @@
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from sklearn.model_selection import train_test_split
-from sklearn.utils.class_weight import compute_class_weight
-from sklearn.metrics import classification_report, confusion_matrix
+from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
-from sentence_transformers import SentenceTransformer
-from sklearn.cluster import KMeans
-from collections import Counter
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import ConfusionMatrixDisplay
 
-# ---------------------
-# Data Preprocessing
-# ---------------------
-def cluster_embeddings(embeddings, n_clusters=5):
-    kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=42)
-    return kmeans.fit_predict(np.stack(embeddings))
+# Device config
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def preprocess(data):
-    data = data.copy()
-    data['Job_Growth_Projection'] = data['Job_Growth_Projection'].astype(str).str.strip().str.title()
-    label_map = {'Decline': 0, 'Stable': 1, 'Growth': 2}
-    data['Job_Growth_Projection'] = data['Job_Growth_Projection'].map(label_map)
-    data.dropna(subset=['Job_Growth_Projection'], inplace=True)
-    data.drop(columns=['Location'], inplace=True)
+# Load X, y
+X = np.load('../data/X.npy')
+y = np.load('../data/y.npy')
 
-    embedder = SentenceTransformer('all-MiniLM-L6-v2')
-    data['Job_Title_Cluster'] = cluster_embeddings(data['Job_Title'].apply(lambda x: embedder.encode(str(x))), n_clusters=3)
-    data['Industry_Cluster'] = cluster_embeddings(data['Industry'].apply(lambda x: embedder.encode(str(x))), n_clusters=3)
-    data['Skills_Cluster'] = cluster_embeddings(data['Required_Skills'].apply(lambda x: embedder.encode(str(x))), n_clusters=10)
-    data.drop(columns=['Job_Title', 'Industry', 'Required_Skills'], inplace=True)
+# Split into train/test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    data['Company_Size'] = data['Company_Size'].map({'Small': 0, 'Medium': 1, 'Large': 2})
-    data['AI_Adoption_Level'] = data['AI_Adoption_Level'].map({'Low': 0, 'Medium': 1, 'High': 2})
-    data['Automation_Risk'] = data['Automation_Risk'].map({'Low': 0, 'Medium': 1, 'High': 2})
-    data['Remote_Friendly'] = data['Remote_Friendly'].map({'No': 0, 'Yes': 1})
+# Convert to PyTorch tensors
+X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
+y_train_tensor = torch.tensor(y_train, dtype=torch.long)
+y_test_tensor = torch.tensor(y_test, dtype=torch.long)
 
-    # Normalize Salary_USD if it exists
-    if 'Salary_USD' in data.columns:
-        data['Salary_USD'] = (data['Salary_USD'] - data['Salary_USD'].mean()) / data['Salary_USD'].std()
+# Create datasets and loaders
+train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
 
-    data.dropna(inplace=True)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32)
 
-    X = data.drop(columns=['Job_Growth_Projection'])
-    y = data['Job_Growth_Projection'].astype(int)
-    return X, y
-
-# ---------------------
-# Model Definition
-# ---------------------
-class JobGrowthClassifier(nn.Module):
-    def __init__(self, input_dim=8, hidden_dim1=32, hidden_dim2=64, output_dim=3):
-        super(JobGrowthClassifier, self).__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim1)
-        self.bn1 = nn.BatchNorm1d(hidden_dim1)
-        self.fc2 = nn.Linear(hidden_dim1, hidden_dim2)
-        self.bn2 = nn.BatchNorm1d(hidden_dim2)
-        self.dropout = nn.Dropout(0.5)
-        self.fc3 = nn.Linear(hidden_dim2, output_dim)
+# Define the neural network model
+class NeuralClassifier(nn.Module):
+    def __init__(self, input_size, num_classes):
+        super(NeuralClassifier, self).__init__()
+        self.fc1 = nn.Linear(input_size, 256)
+        self.fc2 = nn.Linear(256, 128)
+        self.fc3 = nn.Linear(128, num_classes)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.2)
+        self.batch_norm1 = nn.BatchNorm1d(256)
+        self.batch_norm2 = nn.BatchNorm1d(128)
 
     def forward(self, x):
-        x = F.relu(self.bn1(self.fc1(x)))
-        x = F.relu(self.bn2(self.fc2(x)))
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.batch_norm1(x)
         x = self.dropout(x)
-        return self.fc3(x)
+        x = self.fc2(x)
+        x = self.relu(x)
+        x = self.batch_norm2(x)
+        x = self.dropout(x)
+        x = self.fc3(x)
+        return x
 
-# ---------------------
-# Training Function
-# ---------------------
-def train_model(model, train_loader, criterion, optimizer, scheduler, X_val, y_val, patience=10, epochs=100):
-    best_loss = float('inf')
-    patience_counter = 0
-    for epoch in range(epochs):
-        model.train()
-        total_loss = 0
-        for X_batch, y_batch in train_loader:
-            optimizer.zero_grad()
-            outputs = model(X_batch)
-            loss = criterion(outputs, y_batch)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-        scheduler.step()
+# Initialize the model, loss function, and optimizer
+input_size = X_train.shape[1]
+num_classes = len(np.unique(y))
+model = NeuralClassifier(input_size, num_classes).to(device)
+class_weights = torch.tensor([1.0, 2.0], device=device)
+criterion = nn.CrossEntropyLoss(weight=class_weights)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+patience = 5
+best_loss = float('inf')
+patience_counter = 0
+num_epochs = 20
+# Training loop
+for epoch in range(num_epochs):
+    model.train()
+    running_loss = 0.0
+    for batch_X, batch_y in train_loader:
+        batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+        
+        # Forward pass
+        outputs = model(batch_X)
+        loss = criterion(outputs, batch_y)
+        
+        # Backward pass and optimization
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        running_loss += loss.item()
 
-        # Validation loss
-        model.eval()
-        with torch.no_grad():
-            val_outputs = model(X_val)
-            val_loss = criterion(val_outputs, y_val).item()
+    avg_loss = running_loss / len(train_loader)
+    print(f'Epoch [{epoch+1}/{num_epochs}], Average Loss: {avg_loss:.4f}')
 
-        if val_loss < best_loss:
-            best_loss = val_loss
-            patience_counter = 0
-        else:
-            patience_counter += 1
-            if patience_counter >= patience:
-                print(f"Early stopping at epoch {epoch+1}")
-                break
+    # Early stopping check
+    if avg_loss < best_loss:
+        best_loss = avg_loss
+        patience_counter = 0
+        torch.save(model.state_dict(), "best_model.pt")  # Save best model
+    else:
+        patience_counter += 1
+        if patience_counter >= patience:
+            print(f"Early stopping triggered at epoch {epoch+1}")
+            break
 
-        if (epoch + 1) % 10 == 0:
-            print(f"Epoch [{epoch+1}/{epochs}], Train Loss: {total_loss / len(train_loader):.4f}, Val Loss: {val_loss:.4f}")
 
-# ---------------------
-# Evaluation Function
-# ---------------------
-def evaluate_model(model, X_test, y_test):
-    model.eval()
-    with torch.no_grad():
-        outputs = model(X_test)
-        probs = F.softmax(outputs, dim=1)
-        _, predicted = torch.max(probs, 1)
-        accuracy = (predicted == y_test).sum().item() / y_test.size(0)
-        print(f"Accuracy: {accuracy:.4f}")
-        print("Classification Report:")
-        print(classification_report(y_test, predicted, zero_division=0))
-        print("Confusion Matrix:")
-        print(confusion_matrix(y_test, predicted))
+# Evaluation
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
-        # Optional: entropy of predictions
-        entropy = -torch.sum(probs * torch.log(probs + 1e-10), dim=1).mean().item()
-        print(f"Mean Prediction Entropy: {entropy:.4f}")
+model.load_state_dict(torch.load("best_model.pt"))
+model.eval()
+all_preds = []
+all_labels = []
 
-# ---------------------
-# Full Pipeline
-# ---------------------
-if __name__ == '__main__':
-    df = pd.read_csv('../data/ai_insights.csv')
-    X, y = preprocess(df)
-    X_train_np, X_test_np, y_train_np, y_test_np = train_test_split(X.values, y.values, test_size=0.2, stratify=y.values, random_state=42)
-    X_train_np, X_val_np, y_train_np, y_val_np = train_test_split(X_train_np, y_train_np, test_size=0.2, stratify=y_train_np, random_state=42)
+with torch.no_grad():
+    for batch_X, batch_y in test_loader:
+        batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+        outputs = model(batch_X)
+        _, predicted = torch.max(outputs.data, 1)
+        all_preds.extend(predicted.cpu().numpy())
+        all_labels.extend(batch_y.cpu().numpy())
 
-    X_train = torch.tensor(X_train_np, dtype=torch.float32)
-    X_val = torch.tensor(X_val_np, dtype=torch.float32)
-    X_test = torch.tensor(X_test_np, dtype=torch.float32)
-    y_train = torch.tensor(y_train_np, dtype=torch.long)
-    y_val = torch.tensor(y_val_np, dtype=torch.long)
-    y_test = torch.tensor(y_test_np, dtype=torch.long)
+# Compute Accuracy
+accuracy = accuracy_score(all_labels, all_preds)
 
-    weights = compute_class_weight('balanced', classes=np.array([0, 1, 2]), y=y_train_np)
-    class_weights = torch.tensor(weights, dtype=torch.float32)
+# Print Full Metrics
+print(f'Accuracy: {accuracy:.2f}')
+print('Classification Report:')
+print(classification_report(all_labels, all_preds))
+print('Confusion Matrix:')
+print(confusion_matrix(all_labels, all_preds))
 
-    train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=32, shuffle=True)
+# Save Confusion Matrix
+cm = confusion_matrix(all_labels, all_preds)
+disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+disp.plot(cmap=plt.cm.Reds)
+plt.title('NeuralNet Confusion Matrix')
+plt.savefig('../results/model_results/neural_network/confusion_matrix.png')
 
-    model = JobGrowthClassifier(input_dim=X.shape[1])
-    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
-    optimizer = optim.AdamW(model.parameters(), lr=0.0005, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=25, gamma=0.5)
-
-    train_model(model, train_loader, criterion, optimizer, scheduler, X_val, y_val)
-    evaluate_model(model, X_test, y_test)
+# Save Classification Report As CSV
+report = classification_report(all_labels, all_preds, output_dict=True)
+report_df = pd.DataFrame(report).transpose()
+report_df.to_csv('../results/model_results/neural_network/classification_report.csv', index=True)
